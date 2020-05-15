@@ -1,14 +1,8 @@
 id,negative,positive,sentiment,Speech
-1,43,81,38,The Chinese People Have Stood Up!
-2,28,35,7,Serve the People
-3,140,159,19,We Shall Confront the World with Our Ideology
-4,16,18,2,The Uprising of Khurdad
-5,54,58,4,Toussaint’s Final Proclamation
-6,49,47,-2,Speech on Haitian Independence
-8,181,277,96,Speech to Intellectuals
-9,72,50,-22,Justification on the Use of Terror
-10,36,40,4,"Dare, Dare Again, Always Dare"
-11,53,54,1,Liberty or Death
-12,23,55,32,"Give me blood, and I shall give you freedom"
-13,36,40,4,Quit India
-14,199,93,-106,I am Prepared to Die
+1,54,54,0,Liberty or Death
+2,77,68,-9,Justification on the Use of Terror
+3,49,46,-3,Speech on Haitian Independence
+4,37,43,6,Quit India
+5,43,80,37,The Chinese People Have Stood Up!
+7,199,97,-102,I am Prepared to Die
+8,143,154,11,We Shall Confront the World with Our Ideology
