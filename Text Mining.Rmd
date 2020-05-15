@@ -1,0 +1,234 @@
+---
+title: "Revolutionary Speeches"
+author: "Jasmin Flack"
+date: "5/11/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE}
+# load packages
+
+library("tibble")
+
+library("sentimentr")
+library("gplots")
+library("dplyr")
+library("tm")
+library("syuzhet")
+library("RColorBrewer")
+library("RANN")
+library("tm")
+library("topicmodels")
+library("stringr")
+#install.packages("stopwords")
+library("stopwords")
+library("tidyverse")
+library(data.table)
+library(tidytext)
+library(DT)
+library(wordcloud)
+```
+
+##Reading in Speech data
+```{r}
+data <- read.csv("Speeches.csv",header = T )
+```
+
+
+## Text Mining
+```{r}
+# function for removimg leading and trailing whitespace from character strings 
+leadingWhitespace <- content_transformer(function(x) str_trim(x, side = "both"))
+# remove stop words
+data("stop_words")
+stop_words <- stopwords("en")
+
+# clean the data and make a corpus
+corpus <- VCorpus(VectorSource(data$Speech))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(removeWords, stop_words)%>%
+  tm_map(removeNumbers)%>%
+  tm_map(stripWhitespace)%>%
+  tm_map(leadingWhitespace)
+
+s <- corpus %>% tidy() %>% select(text)
+
+stemmed <- tm_map(corpus, stemDocument) %>%
+  tidy() %>%
+  select(text)
+
+dict <- tidy(corpus) %>%
+  select(text) %>%
+  unnest_tokens(dictionary, text)
+
+completed <- stemmed %>%
+  mutate(id = row_number()) %>%
+  unnest_tokens(stems, text) %>%
+  bind_cols(dict) 
+
+completed <- completed %>%
+  group_by(stems) %>%
+  count(dictionary) %>%
+  mutate(word = dictionary[which.max(n)]) %>%
+  ungroup() %>%
+  select(stems, word) %>%
+  distinct() %>%
+  right_join(completed) %>%
+  select(-stems)
+
+completed <- completed %>%
+  group_by(id) %>%
+  summarise(stemmedwords= str_c(word, collapse = " ")) %>%
+  ungroup()
+
+data <- data %>%
+  mutate(id = row_number()) %>%
+  inner_join(completed)
+```
+
+```{r}
+
+tokens <- data %>% unnest_tokens(word, stemmedwords)
+data$Speech <- as.character(data$Speech)
+
+#sentiment by speech
+speech_sent <- tokens %>%
+  inner_join(get_sentiments("bing")) %>% # pull out only sentiment words
+  group_by(id) %>% 
+  count(sentiment) %>% # count the # of positive & negative words
+  spread(sentiment, n, fill = 0) %>% # made data wide rather than narrow
+  mutate(sentiment = positive - negative)
+
+speech_sent$Speech <- data$Title
+write_csv(speech_sent, "RevCarr-Final/sentiment")
+
+
+#Top negative and postive words
+top_neg_words <- tokens %>%
+  inner_join(get_sentiments("bing")) %>% 
+  filter(sentiment=="negative") %>% 
+  count(word) %>% 
+  top_n(n=30, wt=n)
+
+top_pos_words <- tokens %>%
+  inner_join(get_sentiments("bing")) %>% 
+  filter(sentiment=="positive") %>% 
+  count(word) %>% 
+  top_n(n=30, wt=n)
+
+
+#top words
+top_3_byspeech <- tokens %>% group_by(Title) %>% count(word) %>% top_n(n=3, wt=n)
+top_words <- tokens %>% count(word) %>% arrange(desc(n))
+
+write_csv(top_words[1:10,], "RevCarr-Final/Top=Words")
+
+
+#Top Words counts
+counts <- matrix(NA,nrow=10, ncol=7)
+for (i in 1:10){
+  for (j in 1:7){
+counts[i,j] <- str_count(data$stemmedwords[j], top_words[i,]$word)
+  }
+}
+
+row.names(counts) <- top_words$word[1:10]
+colnames(counts) <- data$Title
+
+write.csv(counts, "Top Words Counts")
+
+```
+##Plots
+```{r}
+wordcloud(top_pos_words$word, top_pos_words$n,
+          scale=c(5,0.5),
+          max.words=20,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.2,
+          use.r.layout=T,
+          random.color=T,
+          colors=brewer.pal(6,"Greens"))
+
+wordcloud(top_neg_words$word, top_neg_words$n,
+          scale=c(5,0.5),
+          max.words=20,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.2,
+          use.r.layout=T,
+          random.color=T,
+          colors=brewer.pal(6,"Reds"))
+
+ggplot(speech_sent) +
+  geom_bar(aes(x=id, y=sentiment), stat="identity")
+```
+
+##Analysis Explored but not used
+```{r}
+
+#positive and negative words in each speech
+pos_sents <- tokens %>%
+  inner_join(get_sentiments("bing")) %>% 
+  filter(sentiment=="positive") %>% 
+  group_by(id) %>% 
+  group_split()
+
+neg_sents <- tokens %>%
+  inner_join(get_sentiments("bing")) %>% 
+  filter(sentiment=="negative") %>% 
+  group_by(id) %>% 
+  group_split()
+
+speeches <- tibble(.rows = 7)
+for (i in 1:7){
+  speeches$negative_words[i] <- paste(neg_sents[[i]]$word, collapse = " ")
+  speeches$positive_words[i] <-  paste(pos_sents[[i]]$word, collapse = " ")
+}
+
+#top bigrams
+bigrams <- unnest_tokens(data, bigram, stemmedwords, token= "ngrams", n=2)
+bigrams %>% 
+  count(bigram) %>% top_n(n=5, wt=n)
+
+#word associations
+tdm.all<-TermDocumentMatrix(corpus)
+associations <- findAssocs(tdm.all, "violence", .25)
+
+
+## Topic Clustering
+dtm <- DocumentTermMatrix(corpus)
+rowTotals <- apply(dtm , 1, sum)
+dtm   <- dtm[rowTotals> 0, ]
+# set a seed so that the output of the model is predictable
+lda <- LDA(dtm, k = 2, control = list(seed = 1234))
+topics <- tidy(lda, matrix="beta")
+
+top_terms <- topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip() +
+  scale_x_reordered()
+
+
+```
+
+
+
